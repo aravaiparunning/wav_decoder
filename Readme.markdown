@@ -5,6 +5,25 @@ Read a wav file, get samples information
 
 This is intended for clients to grab a wav file in a small, reusable buffer, making it ideal for use in an embedded application with statically allocated buffers. The processing core maintains a reentrant state machine, and while no mixing or processing is currently done there is a single codepoint to consider for expansion.
 
+Installation
+------------
+
+To include in a cmake project, use FetchContent:
+
+```cmake
+include(FetchContent)
+
+# Fetch Wave Parser from github
+FetchContent_Declare(
+  wave_decoder
+  GIT_REPOSITORY https://github.com/aravaiparunning/wav_decoder.git
+)
+FetchContent_MakeAvailable(wave_decoder)
+
+target_link_libraries(my_executable PRIVATE wave_decoder)
+
+````
+
 Usage
 -----
 
