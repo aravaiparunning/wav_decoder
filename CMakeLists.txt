@@ -24,7 +24,7 @@ add_library(WaveDecoder STATIC
   )
 
 target_include_directories(WaveDecoder PUBLIC
-   $<BUILD_INTERFACE:/src> 
+   src
    )
 
 # Specify that CMakeDemo requires LAPACK to link properly. Ideally, LAPACK would
