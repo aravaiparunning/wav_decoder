@@ -1,8 +1,12 @@
-=  Wave Parser
+Wave Parser
+============
 
 Read a wav file, get samples information
 
-This is intended for clients to grab a wav file in a small, reusable buffer, making it ideal for use in an embedded application with statically allocated buffers. The processing core maintains a reentrant state machine, and while no mixing or processing is currently done there is a single codepoint to consider for expansion. 
+This is intended for clients to grab a wav file in a small, reusable buffer, making it ideal for use in an embedded application with statically allocated buffers. The processing core maintains a reentrant state machine, and while no mixing or processing is currently done there is a single codepoint to consider for expansion.
+
+Usage
+-----
 
 1. Initialize the state machine with `wave_init`
 2. Configure a callback to be informed when format information is available
