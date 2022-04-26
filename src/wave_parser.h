@@ -50,10 +50,18 @@ typedef struct wave_decoder_s {
 
   uint32_t processed_bytes;
   
+  void * context;
+  
 } wave_decoder_t;
 
 
 void wave_init(wave_decoder_t * decoder, uint8_t * buf1, uint8_t * buf2, size_t buf_size);
+
+// Specify a context pointer that will be available to callbacks
+static inline void wave_set_context(wave_decoder_t * decoder, void * context)
+{
+  decoder->context = context;
+}
 
 // Specify a callback to be called with sample data.
 //
