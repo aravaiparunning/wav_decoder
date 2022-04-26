@@ -17,8 +17,6 @@ FUNCTION(PREPEND var )
 ENDFUNCTION(PREPEND)
 
 
-add_subdirectory(src)
-
 # Add the library CMakeDemo as a target, with the contents of src/ and include/
 # as dependencies.
 add_library(WaveDecoder STATIC 
