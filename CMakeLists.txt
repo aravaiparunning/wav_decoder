@@ -5,6 +5,7 @@ set(CMAKE_OSX_ARCHITECTURES arm64 x86_64) # build fat if we're on a Mac
 # library or tool to specify a particular version when they include it, as in 
 #   find_package(CMakeDemo 1.0 REQUIRED)
 project(WaveDecoder VERSION 1.0 LANGUAGES C)
+set(WaveDecoder_ROOT, ${CMAKE_CURRENT_LIST_DIR})
 set(WaveDecoder_VERSION 1.0)
 
 # Function to prepend the subdirectory to source files in subdirectories
@@ -23,8 +24,8 @@ add_library(WaveDecoder STATIC
   src/wave_parser.c
   )
 
-target_include_directories(WaveDecoder PUBLIC
-   src
+target_include_directories(WaveDecoder SYSTEM PUBLIC
+   ${WaveDecoder_ROOT}/src
    )
 
 # Specify that CMakeDemo requires LAPACK to link properly. Ideally, LAPACK would
