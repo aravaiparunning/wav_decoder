@@ -53,6 +53,8 @@ typedef struct wave_decoder_s {
   
   void * context;
   
+  float volume;
+  
 } wave_decoder_t;
 
 

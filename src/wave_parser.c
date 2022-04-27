@@ -18,6 +18,7 @@ void wave_init(wave_decoder_t * decoder, uint8_t * buf1, uint8_t * buf2, size_t 
   decoder->buf2 = buf2;
   decoder->buf_size = buf_size;
   decoder->cb = NULL;
+  decoder->volume = 0.9;
   
 }
 
@@ -291,12 +292,46 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
         {
           if (ch == 0)
           {
-            // for(int8_t b=channel_byte_align-1; b>=0; b--)
+#ifdef WAV_NO_VOLUME
             for (uint8_t b=0; b<channel_byte_align; b++)
             {
               // printf("-> wr %d %p %d\n", b, buf, endbuf-buf);
               buf[b] = *ptr++;
             }
+#else
+            switch(channel_byte_align) {
+              case 2: {
+                int16_t samp = *ptr++;
+                samp |= (*ptr++ << 8);
+                samp = ((samp - ((int16_t)0xefff/2)) * decoder->volume) + (4096/2);
+                
+                *((int16_t*)buf) = samp;
+
+                break;
+              }
+              
+              case 1: {
+                uint8_t samp = *ptr++;
+                samp *= decoder->volume;
+                samp = ((samp - ((int16_t)0xff/2)) * decoder->volume) + (4096/2);
+                *buf = samp;
+                break;
+              }
+              
+              case 4: {
+                uint32_t samp;
+                samp |= *ptr++;;
+                samp |= (*ptr++ << 8);
+                samp |= (*ptr++ << 16);
+                samp |= (*ptr++ << 24);
+
+                samp = ((samp - ((int32_t)0xefffffff/2)) * decoder->volume) + (4096/2);
+
+                *((int32_t*)buf) = samp;
+                break;
+              }
+            }
+#endif /* WAV_NO_VOLUME */
           }
 
           buf += channel_byte_align;
