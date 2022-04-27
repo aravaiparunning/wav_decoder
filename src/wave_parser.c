@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include "wave_parser.h"
 
 
@@ -20,6 +21,16 @@ void wave_init(wave_decoder_t * decoder, uint8_t * buf1, uint8_t * buf2, size_t 
   
 }
 
+static bool wave_match4(const void *needle, const void * haystack)
+{
+  uint8_t * n = (uint8_t *)needle;
+  uint8_t * h = (uint8_t *)haystack;
+  for(size_t i = 0; i < 4; ++i)
+  {
+    if (n[i] != h[i]) return false;
+  }
+  return true;
+}
 
 uint8_t * wave_get_free_buf(wave_decoder_t * decoder)
 {
@@ -53,7 +64,6 @@ static uint32_t read_header(wave_header_t * header, uint8_t * buf)
   return sizeof(wave_header_t);
 }
 
-
 static uint32_t read_fmt_subchunk_header(wave_subchunk_header_t * header, uint8_t * buf)
 {
   if (NULL == header || NULL == buf) 
@@ -67,7 +77,7 @@ static uint32_t read_fmt_subchunk_header(wave_subchunk_header_t * header, uint8_
   // 8-byte generic header struct entry and fill the fmt structure as well.
   //
   len = sizeof(wave_subchunk_header_t);
-  if (0 <= strstr(header_type, "fmt "))
+  if (wave_match4(header_type, "fmt "))
   {
     len += sizeof(wave_fmt_subchunk_header_t);
   }
@@ -77,6 +87,18 @@ static uint32_t read_fmt_subchunk_header(wave_subchunk_header_t * header, uint8_
   return len;
 }
 
+const char * wave_state_name(wav_decode_state_t s)
+{
+  switch(s)
+  {
+    case wav_decode_no_header: return "wav_decode_no_header";
+    case wav_ignore_unknown_chunk: return "wav_ignore_unknown_chunk";
+    case wav_decode_read_subchunk_header: return "wav_decode_read_subchunk_header";
+    case wav_decode_read_subchunk_data: return "wav_decode_read_subchunk_data";
+    default: return "<unknown>";
+  }
+}
+
 
 int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size)
 {
@@ -84,14 +106,20 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
   uint8_t * ptr = buf;
   
   #define PROCESSED(_count) do { /*printf("PROCESSED %d\n", _count);*/ size -= _count;  decoder->processed_bytes += _count; ptr += _count; } while (0);
+    
+  if (decoder->state == wav_decode_read_subchunk_data)
+    printf("wave: process in state %s from %d\n", wave_state_name(decoder->state), decoder->processed_bytes);
+  else
+    printf("wave: process in state %s from %d (%c %c %c %c)\n", wave_state_name(decoder->state), decoder->processed_bytes,
+      buf[0], buf[1], buf[2], buf[3]);
   
   switch (decoder->state) {
     
     case wav_ignore_unknown_chunk: {
-      printf("ignore chunk %.4s\n", decoder->header.chunk_id);
+      printf("ignore from %d until %d\n", decoder->processed_bytes, decoder->skip_until);
       // The location of the header is in decoder->chunk_loc. We need
       // to ignore bytes until decoder->processed_bytes equals chunk_lock + header.chunk_size
-      uint32_t chunk_end = decoder->chunk_loc + decoder->header.chunk_size;
+      uint32_t chunk_end = decoder->skip_until;
       if (chunk_end < decoder->processed_bytes)
       {
         printf("wave: invalid chunk size");
@@ -103,12 +131,16 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
       {
         // We need to ignore everything left in the given buffer
         decoder->processed_bytes += size;
+        printf("wave: ignore: processed %d (line %d)\n", size, __LINE__);
         return size;
       }
       else
       {
         decoder->processed_bytes += delta;
-        decoder->state = wav_decode_no_header;
+        decoder->state = wav_decode_read_subchunk_header;
+        printf("ignore done (now at %d)\n", decoder->processed_bytes);
+        printf("wave: ignore: processed %d (line %d)\n", delta, __LINE__);
+        return delta;
       }
     }
     /* Fall through */
@@ -122,7 +154,8 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
         return ptr - buf;
       }
       
-      decoder->chunk_loc = decoder->processed_bytes;
+      uint32_t chunk_loc = decoder->processed_bytes;
+      printf("wave: will read header at %d\n", chunk_loc);
       sz = read_header(&decoder->header, ptr);
       PROCESSED(sz);
       
@@ -131,13 +164,15 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
       printf("File type:  %.4s\n", h->chunk_id);
       printf("Chunk type: %.4s\n", h->chunk_type);
       printf("Chunk size: %d\n", h->chunk_size);
-      
-      if (0 > strstr(h->chunk_id, "RIFF") || 
-          0 > strstr(h->chunk_type, "WAVE"))
+
+      if (!wave_match4(h->chunk_id, "RIFF") || !wave_match4(h->chunk_type, "WAVE"))
       {
         // This chunk is unknown.
-        printf("[UNSUPPORTED]\n");
+        printf("[UNSUPPORTED CHUNK]\n");
+        printf("skip %d-%d\n", chunk_loc, chunk_loc + h->chunk_size);
+        decoder->skip_until = chunk_loc + h->chunk_size;
         decoder->state = wav_ignore_unknown_chunk;
+        return ptr - buf;
         // bytes to ignore are in the header size.
         // just need to wait until processed bytes = header_size + header_loc.
       }
@@ -155,12 +190,16 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
     /* FALL THROUGH */
     
     case wav_decode_read_subchunk_header: {
-      uint32_t required_size = *(uint32_t*)(ptr + 4);
-      if (size < required_size)
-      {
-        printf("wave: buf too small for subchunk header\n");
-        return ptr - buf;
-      }
+      printf("=> read subchunk header at %ld\n", ptr - buf);
+      // uint32_t required_size = *(uint32_t*)(ptr + 4);
+      // if (size < required_size)
+      // {
+      //   printf("wave: buf of %d too small for subchunk header (required size %u)\n", size, required_size);
+      //   printf("wave: data at ptr: %02x %02x %02x %02x (%c %c %c %c)\n",
+      //     ptr[0], ptr[1], ptr[2], ptr[3],
+      //     ptr[0], ptr[1], ptr[2], ptr[3]);
+      //   return ptr - buf;
+      // }
       
       // HACK: The called code is happy to overflow right through
       // the subchunk_header structure into the fmt_subchunk_header
@@ -170,13 +209,19 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
       // currently being processed. The fmt header will contain the
       // last fmt information that was read.
       //
+      uint32_t subchunk_header_loc = decoder->processed_bytes;
+      printf("=> will read subchunk header at %d\n", subchunk_header_loc);
       sz = read_fmt_subchunk_header(&decoder->subchunk_header, ptr);
       PROCESSED(sz);
       
+      printf("wave: read chunk header; ptr now: %02x %02x %02x %02x (%c %c %c %c)\n",
+        ptr[0], ptr[1], ptr[2], ptr[3],
+        ptr[0], ptr[1], ptr[2], ptr[3]);
+      
       // The fmt  subchunk is mandatory.
-      if (0 <= strstr(decoder->header.chunk_type, "WAVE"))
+      if (wave_match4(decoder->header.chunk_type, "WAVE"))
       {
-        if (0 <= strstr(decoder->subchunk_header.chunk_id, "fmt "))
+        if (wave_match4(decoder->subchunk_header.chunk_id, "fmt "))
         {
           // So we have a subchunk now, which is pretty neat.
           // Expect data next
@@ -190,24 +235,37 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
           if (NULL != decoder->fmt_cb)
             decoder->fmt_cb(decoder);
           
-          decoder->state = wav_decode_read_subchunk_data;
+          // decoder->state = wav_decode_read_subchunk_data;
+          // Read next chunk
+          decoder->state = wav_decode_read_subchunk_header;
           
+          // We aren't guaranteed to get a data subchunk next
+          return ptr - buf;
         }
         else
-        if (0 <= strstr(decoder->subchunk_header.chunk_id, "data"))
+        if (wave_match4(decoder->subchunk_header.chunk_id, "data"))
         {
           // Actual sample data, finally. So I guess just read the
           // rest of the buffer into samples.
           /* FALL THROUGH */
+          printf("wave: FOUND data chunk\n");
+          decoder->state = wav_decode_read_subchunk_data;
         }
         else
         {
-          // We got something that's not fmt, so need to skip it.
-          // @TODO should we add a skip_unknown_bytes field? For now
-          // @TODO we just ignore the rest of the chunk, including any
-          // @TODO subchunks after it. That's probably fine, really.
+          // We got something that's not 'fmt ' or 'data', so need to skip it.
+          printf("[UNSUPPORTED SUBCHUNK]\n");
+
+          // Skip the rest of this chunk, including the 8 bytes that have already been read.
+          //
+          decoder->skip_until = subchunk_header_loc + decoder->subchunk_header.chunk_size + 8;
           decoder->state = wav_ignore_unknown_chunk;
-          break;
+
+          printf("skip %d-%d (line %d)\n", subchunk_header_loc, decoder->skip_until, __LINE__);
+          printf("wave: processed %ld\n", ptr - buf);
+
+          // We aren't guaranteed to get a data subchunk next
+          return ptr - buf;
         }
       }
     }
@@ -215,6 +273,7 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
     /* FALL THROUGH */
     
     case wav_decode_read_subchunk_data: {
+      printf("wave: wav_decode_read_subchunk_data\n");
       // Hokay, so, we are now pointing at some samples.
       // We have `size` bytes left to go. Let's go for it.
       // printf("samples: %d bytes\n", size);
