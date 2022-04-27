@@ -51,6 +51,8 @@ typedef struct wave_decoder_s {
 
   uint32_t processed_bytes;
   
+  void * context;
+  
 } wave_decoder_t;
 
 
@@ -66,6 +68,11 @@ static inline void wave_set_sample_cb(wave_decoder_t * decoder, wave_sample_cb_t
 static inline void wave_set_fmt_cb(wave_decoder_t * decoder, wave_fmt_cb_t * cb)
 {
   decoder->fmt_cb = cb;
+}
+
+static inline void wave_set_context(wave_decoder_t * decoder, void * context)
+{
+  decoder->context = context;
 }
 
 // Return a buffer that is not currently in use. This is limited to
