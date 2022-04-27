@@ -106,12 +106,14 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
   uint8_t * ptr = buf;
   
   #define PROCESSED(_count) do { /*printf("PROCESSED %d\n", _count);*/ size -= _count;  decoder->processed_bytes += _count; ptr += _count; } while (0);
-    
+
+#ifdef DEBUG_WAV    
   if (decoder->state == wav_decode_read_subchunk_data)
     printf("wave: process in state %s from %d\n", wave_state_name(decoder->state), decoder->processed_bytes);
   else
     printf("wave: process in state %s from %d (%c %c %c %c)\n", wave_state_name(decoder->state), decoder->processed_bytes,
       buf[0], buf[1], buf[2], buf[3]);
+#endif
   
   switch (decoder->state) {
     
@@ -273,7 +275,7 @@ int32_t wave_process_data(wave_decoder_t * decoder, uint8_t * buf, uint32_t size
     /* FALL THROUGH */
     
     case wav_decode_read_subchunk_data: {
-      printf("wave: wav_decode_read_subchunk_data\n");
+      // printf("wave: wav_decode_read_subchunk_data\n");
       // Hokay, so, we are now pointing at some samples.
       // We have `size` bytes left to go. Let's go for it.
       // printf("samples: %d bytes\n", size);
